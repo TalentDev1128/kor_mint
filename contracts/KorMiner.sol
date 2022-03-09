@@ -35,15 +35,14 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
 
     // numOfMiners should be multiplied by 4
     function setMiners(uint256 _hashrate, uint256 _numOfMiner, uint256 _price) external onlyOwner {
-        Miner memory miner;
         for (uint256 i = 0; i < totalMinerTypes; i++) {
-            miner = miners[i];
-            if (miner.hashrate == _hashrate) {
-                miner.numOfMiner = _numOfMiner * 4;
-                miner.price = _price;
+            if (miners[i].hashrate == _hashrate) {
+                miners[i].numOfMiner = _numOfMiner * 4;
+                miners[i].price = _price;
                 return;
             }
         }
+        Miner memory miner;
         miner = Miner({hashrate: _hashrate, numOfMiner: _numOfMiner * 4, price: _price});
         miners[totalMinerTypes] = miner;
         totalMinerTypes++;
@@ -59,7 +58,7 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
             }
         }
         require(miner.hashrate > 0, "No matching miners");
-        require(msg.value >= miner.price, "Not enough money");
+        require(msg.value >= (miner.price * _num / 4), "Not enough money");
         uint256 minted = mintedMinerCount[_hashrate];
         require(minted + _num <= miner.numOfMiner, "Exceed available number of miners");
 
