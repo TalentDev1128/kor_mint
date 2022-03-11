@@ -6,10 +6,12 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
     using Counters for Counters.Counter;
     Counters.Counter private _tokenIds;
+    AggregatorV3Interface internal priceFeed;
 
     struct Miner {
         uint256 hashrate;
@@ -17,7 +19,7 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
         uint256 price;
     }
 
-    address private usdcAddress;
+    address public usdcAddress;
     IERC20 private _token;
     
     mapping(uint256 => Miner) public miners;
@@ -27,10 +29,28 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
     uint256 public totalMinerTypes;
 
     constructor() ERC721("KorMiner", "KorMiner") {
+        // Ethereum mainnet: 0x986b5E1e1755e3C2440e960477f25201B0a8bbD4
+        // Rinkeby testnet: 0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf
+        priceFeed = AggregatorV3Interface(0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf);
+        
+        // Ethereum mainnet: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+        // Rinkeby testnet: 0xD92E713d051C37EbB2561803a3b5FBAbc4962431
+        usdcAddress = 0xD92E713d051C37EbB2561803a3b5FBAbc4962431;
     }
 
-    function setUSDCAddress(address _tokenAddress) external onlyOwner {
-        usdcAddress = _tokenAddress;
+    function getLatestPrice() public view returns (uint256) {
+        (
+            /*uint80 roundID*/,
+            int price,
+            /*uint startedAt*/,
+            /*uint timeStamp*/,
+            /*uint80 answeredInRound*/
+        ) = priceFeed.latestRoundData();
+        return uint256(price);
+    }
+
+    function setUSDCAddress(address _usdcAddress) external onlyOwner {
+        usdcAddress = _usdcAddress;
     }
 
     // numOfMiners should be multiplied by 4
@@ -50,6 +70,7 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
 
     // num 1 is equal to 1 / 4, and 2 is equal to 2 / 4
     function buyMiner(uint256 _hashrate, uint256 _num) external payable nonReentrant {
+        uint256 currentPrice = getLatestPrice();
         Miner memory miner;
         for (uint256 i = 0; i < totalMinerTypes; i++) {
             miner = miners[i];
@@ -58,7 +79,7 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
             }
         }
         require(miner.hashrate > 0, "No matching miners");
-        require(msg.value >= (miner.price * _num / 4), "Not enough money");
+        require(msg.value >= (miner.price * currentPrice * _num / 4), "Not enough money");
         uint256 minted = mintedMinerCount[_hashrate];
         require(minted + _num <= miner.numOfMiner, "Exceed available number of miners");
 
