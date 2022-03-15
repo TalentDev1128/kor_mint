@@ -13,10 +13,13 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
     Counters.Counter private _tokenIds;
     AggregatorV3Interface internal priceFeed;
 
+    uint256 constant public expireLimit = 4 * 365 * 24 * 60 * 60; // 4 years
+
     struct Miner {
         uint256 hashrate;
         uint256 numOfMiner;
         uint256 price;
+        uint256 mintTime;
     }
 
     address public usdcAddress;
@@ -49,8 +52,34 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
         return uint256(price);
     }
 
+    function isExpired (uint256 _tokenId) internal view returns(bool) {
+        Miner memory miner = tokenIdToMiner[_tokenId];
+        return (block.timestamp - miner.mintTime > expireLimit);
+    }
+
+    function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes calldata data) public override {
+        require(!isExpired(_tokenId), "Expired item cannot be traded");
+        super.safeTransferFrom(_from, _to, _tokenId, data);
+    }
+
+    function safeTransferFrom(address _from, address _to, uint256 _tokenId) public override {
+        require(!isExpired(_tokenId), "Expired item cannot be traded");
+        super.safeTransferFrom(_from, _to, _tokenId);
+    }
+
+    function transferFrom(address _from, address _to, uint256 _tokenId) public override {
+        require(!isExpired(_tokenId), "Expired item cannot be traded");
+        super.transferFrom(_from, _to, _tokenId);
+    }
+
     function setUSDCAddress(address _usdcAddress) external onlyOwner {
         usdcAddress = _usdcAddress;
+    }
+
+    function forceExpire(uint256 _tokenId) external onlyOwner {
+        require(isExpired(_tokenId), "This token is not expired yet");
+        Miner memory miner = tokenIdToMiner[_tokenId];
+        mintedMinerCount[miner.hashrate] -= miner.numOfMiner;
     }
 
     // numOfMiners should be multiplied by 4
@@ -63,7 +92,7 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
             }
         }
         Miner memory miner;
-        miner = Miner({hashrate: _hashrate, numOfMiner: _numOfMiner * 4, price: _price});
+        miner = Miner({hashrate: _hashrate, numOfMiner: _numOfMiner * 4, price: _price, mintTime: 0});
         miners[totalMinerTypes] = miner;
         totalMinerTypes++;
     }
@@ -87,6 +116,7 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
         _safeMint(msg.sender, _tokenIds.current());
 
         miner.numOfMiner = _num;
+        miner.mintTime = block.timestamp;
         tokenIdToMiner[_tokenIds.current()] = miner;
         mintedMinerCount[_hashrate] += _num;
     }
@@ -102,6 +132,8 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
         Miner memory miner;
         for (uint256 i = 0; i < totalSupply(); i++) {
             miner = tokenIdToMiner[i + 1];
+            if (isExpired(i + 1))
+                break;
             uint256 percentOfToken = (totalReward * miner.hashrate) / totalPower;
             uint256 rewardOfToken = (percentOfToken * miner.numOfMiner * 2) / (3 * 4);
             _token.transfer(ownerOf(i + 1), rewardOfToken);
