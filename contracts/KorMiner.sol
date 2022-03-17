@@ -4,34 +4,47 @@ pragma solidity 0.8.4;
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
-contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
+contract KorMiner is ERC721Enumerable, ReentrancyGuard {
     using Counters for Counters.Counter;
-    Counters.Counter private _tokenIds;
-    AggregatorV3Interface internal priceFeed;
+    Counters.Counter internal _tokenIds;
+    address public owner;
 
-    uint256 constant public expireLimit = 4 * 365 * 24 * 60 * 60; // 4 years
+    modifier onlyOwner() {
+        require(owner == msg.sender, "Ownable: caller is not the owner");
+        _;
+    }
 
     struct Miner {
+        string minerType;
         uint256 hashrate;
         uint256 numOfMiner;
         uint256 price;
+    }
+
+    struct Token {
+        uint256 index;
+        uint256 amount;
         uint256 mintTime;
     }
 
+    uint256 constant public expireLimit = 4 * 365 * 24 * 60 * 60; // 4 years
+    AggregatorV3Interface internal priceFeed;
+
     address public usdcAddress;
-    IERC20 private _token;
+    IERC20 internal usdcToken;
     
-    mapping(uint256 => Miner) public miners;
-    mapping(uint256 => uint256) public mintedMinerCount; // map hashrate to number
-    mapping(uint256 => Miner) public tokenIdToMiner; // just need hash rate and number in this case
+    mapping(uint256 => Miner) public miners; // miner index to miner
+    mapping(uint256 => uint256) public mintedMinerCount; // miner index to minted amount (1 = 1/4)
+    mapping(uint256 => Token) public tokenIdToToken; // nft token Id to Token
 
-    uint256 public totalMinerTypes;
+    uint256 public totalMiner;
 
-    constructor() ERC721("KorMiner", "KorMiner") {
+    constructor() ERC721("KOR", "KOR") {
+        owner = msg.sender;
+
         // Ethereum mainnet: 0x986b5E1e1755e3C2440e960477f25201B0a8bbD4
         // Rinkeby testnet: 0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf
         priceFeed = AggregatorV3Interface(0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf);
@@ -53,8 +66,8 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
     }
 
     function isExpired (uint256 _tokenId) internal view returns(bool) {
-        Miner memory miner = tokenIdToMiner[_tokenId];
-        return (block.timestamp - miner.mintTime > expireLimit);
+        Token memory token = tokenIdToToken[_tokenId];
+        return (block.timestamp - token.mintTime > expireLimit);
     }
 
     function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes calldata data) public override {
@@ -78,65 +91,67 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
 
     function forceExpire(uint256 _tokenId) external onlyOwner {
         require(isExpired(_tokenId), "This token is not expired yet");
-        Miner memory miner = tokenIdToMiner[_tokenId];
-        mintedMinerCount[miner.hashrate] -= miner.numOfMiner;
+        Token memory token = tokenIdToToken[_tokenId];
+        uint256 minerIndex = token.index;
+        mintedMinerCount[minerIndex] -= token.amount;
     }
 
     // numOfMiners should be multiplied by 4
-    function setMiners(uint256 _hashrate, uint256 _numOfMiner, uint256 _price) external onlyOwner {
-        for (uint256 i = 0; i < totalMinerTypes; i++) {
-            if (miners[i].hashrate == _hashrate) {
-                miners[i].numOfMiner = _numOfMiner * 4;
-                miners[i].price = _price;
-                return;
-            }
-        }
-        Miner memory miner;
-        miner = Miner({hashrate: _hashrate, numOfMiner: _numOfMiner * 4, price: _price, mintTime: 0});
-        miners[totalMinerTypes] = miner;
-        totalMinerTypes++;
+    function addMiner(string memory _minerType, uint256 _hashrate, uint256 _numOfMiner, uint256 _price) external onlyOwner {
+        Miner memory miner = Miner({minerType: _minerType, hashrate: _hashrate, numOfMiner: _numOfMiner * 4, price: _price});
+        miners[totalMiner] = miner;
+        totalMiner++;
+    }
+
+    // numOfMiners should be multiplied by 4
+    function updateMiner(uint256 index, string memory _minerType, uint256 _hashrate, uint256 _numOfMiner, uint256 _price) external onlyOwner {
+        require(index < totalMiner, "index out of bounds");
+        miners[index].minerType = _minerType;
+        miners[index].hashrate = _hashrate;
+        miners[index].numOfMiner = _numOfMiner * 4;
+        miners[index].price = _price;
     }
 
     // num 1 is equal to 1 / 4, and 2 is equal to 2 / 4
-    function buyMiner(uint256 _hashrate, uint256 _num) external payable nonReentrant {
+    function buyMiner(uint256 index, uint256 _num) external payable nonReentrant {
+        require(index < totalMiner, "index out of bounds");
+        Miner memory miner = miners[index];
         uint256 currentPrice = getLatestPrice();
-        Miner memory miner;
-        for (uint256 i = 0; i < totalMinerTypes; i++) {
-            miner = miners[i];
-            if (miner.hashrate == _hashrate) {
-                break;
-            }
-        }
-        require(miner.hashrate > 0, "No matching miners");
         require(msg.value >= (miner.price * currentPrice * _num / 4), "Not enough money");
-        uint256 minted = mintedMinerCount[_hashrate];
+
+        uint256 minted = mintedMinerCount[index];
         require(minted + _num <= miner.numOfMiner, "Exceed available number of miners");
 
         _tokenIds.increment();
         _safeMint(msg.sender, _tokenIds.current());
 
-        miner.numOfMiner = _num;
-        miner.mintTime = block.timestamp;
-        tokenIdToMiner[_tokenIds.current()] = miner;
-        mintedMinerCount[_hashrate] += _num;
+        Token memory token;
+        token.index = index;
+        token.amount = _num;
+        token.mintTime = block.timestamp;
+
+        tokenIdToToken[_tokenIds.current()] = token;
+        mintedMinerCount[index] += _num;
     }
 
     function distributeReward(uint256 totalReward) external onlyOwner {
-        _token = IERC20(usdcAddress);
+        usdcToken = IERC20(usdcAddress);
         uint256 totalPower;
 
-        for (uint256 i = 0; i < totalMinerTypes; i++) {
+        for (uint256 i = 0; i < totalMiner; i++) {
             totalPower += miners[i].hashrate * miners[i].numOfMiner / 4;
         }
 
-        Miner memory miner;
+        Token memory token;
         for (uint256 i = 0; i < totalSupply(); i++) {
-            miner = tokenIdToMiner[i + 1];
             if (isExpired(i + 1))
                 break;
-            uint256 percentOfToken = (totalReward * miner.hashrate) / totalPower;
-            uint256 rewardOfToken = (percentOfToken * miner.numOfMiner * 2) / (3 * 4);
-            _token.transfer(ownerOf(i + 1), rewardOfToken);
+            token = tokenIdToToken[i + 1];
+            uint256 minerIndex = token.index;
+            
+            uint256 percentOfToken = (totalReward * miners[minerIndex].hashrate) / totalPower;
+            uint256 rewardOfToken = (percentOfToken * token.amount * 2) / (3 * 4);
+            usdcToken.transfer(ownerOf(i + 1), rewardOfToken);
         }
     }
 
@@ -144,7 +159,7 @@ contract KorMiner is ERC721Enumerable, Ownable, ReentrancyGuard {
     function withdraw() external onlyOwner{
         // send all Ether to owner
         // Owner can receive Ether since the address of owner is payable
-        (bool success, ) = owner().call{value: address(this).balance}("");
+        (bool success, ) = owner.call{value: address(this).balance}("");
         require(success, "Failed to send Ether");
     }
 }
