@@ -1,5 +1,5 @@
-const KorMiner = artifacts.require("KorMiner");
+const KOR = artifacts.require("KOR");
 
 module.exports = async function (deployer) {
-  await deployer.deploy(KorMiner);
+  await deployer.deploy(KOR);
 };

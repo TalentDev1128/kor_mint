@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
-contract KorMiner is ERC721Enumerable, ReentrancyGuard {
+contract KOR is ERC721Enumerable, ReentrancyGuard {
     using Counters for Counters.Counter;
     Counters.Counter internal _tokenIds;
     address public owner;
