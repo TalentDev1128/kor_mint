@@ -35,6 +35,7 @@ contract KorMiner is ERC721Enumerable, ReentrancyGuard {
 
     address public usdcAddress;
     IERC20 internal usdcToken;
+    string public _baseTokenURI;
     
     mapping(uint256 => Miner) public miners; // miner index to miner
     mapping(uint256 => uint256) public mintedMinerCount; // miner index to minted amount (1 = 1/4)
@@ -65,7 +66,7 @@ contract KorMiner is ERC721Enumerable, ReentrancyGuard {
         return uint256(price);
     }
 
-    function isExpired (uint256 _tokenId) internal view returns(bool) {
+    function isExpired (uint256 _tokenId) public view returns(bool) {
         Token memory token = tokenIdToToken[_tokenId];
         return (block.timestamp - token.mintTime > expireLimit);
     }
@@ -161,5 +162,13 @@ contract KorMiner is ERC721Enumerable, ReentrancyGuard {
         // Owner can receive Ether since the address of owner is payable
         (bool success, ) = owner.call{value: address(this).balance}("");
         require(success, "Failed to send Ether");
+    }
+
+    function _baseURI() internal view virtual override returns (string memory) {
+        return _baseTokenURI;
+    }
+
+    function setBaseURI(string memory baseURI) external onlyOwner {
+        _baseTokenURI = baseURI;
     }
 }
