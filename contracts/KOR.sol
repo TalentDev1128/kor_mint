@@ -28,6 +28,7 @@ contract KOR is ERC721Enumerable, ReentrancyGuard {
         uint256 index;
         uint256 amount;
         uint256 mintTime;
+        uint256 totalEarning;
     }
 
     uint256 constant public expireLimit = 4 * 365 * 24 * 60 * 60; // 4 years
@@ -153,6 +154,8 @@ contract KOR is ERC721Enumerable, ReentrancyGuard {
             uint256 percentOfToken = (totalReward * miners[minerIndex].hashrate) / totalPower;
             uint256 rewardOfToken = (percentOfToken * token.amount * 2) / (3 * 4);
             usdcToken.transfer(ownerOf(i + 1), rewardOfToken);
+
+            tokenIdToToken[i + 1].totalEarning += rewardOfToken;
         }
     }
 
