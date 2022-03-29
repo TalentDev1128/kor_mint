@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.4;
 
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
-contract KOR is ERC721Enumerable, ReentrancyGuard {
-    using Counters for Counters.Counter;
-    Counters.Counter internal _tokenIds;
+contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
+    using CountersUpgradeable for CountersUpgradeable.Counter;
+    CountersUpgradeable.Counter internal _tokenIds;
     address public owner;
 
     modifier onlyOwner() {
@@ -44,7 +44,9 @@ contract KOR is ERC721Enumerable, ReentrancyGuard {
 
     uint256 public totalMiner;
 
-    constructor() ERC721("KOR", "KOR") {
+    function initialize() initializer external {
+        __ERC721_init("KOR", "KOR");
+
         owner = msg.sender;
 
         // Ethereum mainnet: 0x986b5E1e1755e3C2440e960477f25201B0a8bbD4
@@ -55,6 +57,18 @@ contract KOR is ERC721Enumerable, ReentrancyGuard {
         // Rinkeby testnet: 0xD92E713d051C37EbB2561803a3b5FBAbc4962431
         usdcAddress = 0xD92E713d051C37EbB2561803a3b5FBAbc4962431;
     }
+
+    // constructor() ERC721("KOR", "KOR") {
+    //     owner = msg.sender;
+
+    //     // Ethereum mainnet: 0x986b5E1e1755e3C2440e960477f25201B0a8bbD4
+    //     // Rinkeby testnet: 0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf
+    //     priceFeed = AggregatorV3Interface(0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf);
+        
+    //     // Ethereum mainnet: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+    //     // Rinkeby testnet: 0xD92E713d051C37EbB2561803a3b5FBAbc4962431
+    //     usdcAddress = 0xD92E713d051C37EbB2561803a3b5FBAbc4962431;
+    // }
 
     function getLatestPrice() public view returns (uint256) {
         (
