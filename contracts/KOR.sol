@@ -32,6 +32,9 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
     }
 
     uint256 constant public expireLimit = 4 * 365 * 24 * 60 * 60; // 4 years
+    uint256 constant public rewardDistributePeriod = 14 * 24 * 60 * 60; // two weeks
+    uint256 internal lastDistributionTime;
+
     AggregatorV3Interface internal priceFeed;
 
     address public usdcAddress;
@@ -105,6 +108,10 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
         usdcAddress = _usdcAddress;
     }
 
+    function setLastDistributionTIme() external onlyOwner {
+        lastDistributionTime = block.timestamp;
+    }
+
     function forceExpire(uint256 _tokenId) external onlyOwner {
         require(isExpired(_tokenId), "This token is not expired yet");
         Token memory token = tokenIdToToken[_tokenId];
@@ -151,6 +158,8 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
     }
 
     function distributeReward(uint256 totalReward) external onlyOwner {
+        require(lastDistributionTime > 0, "reward start time not set");
+        require(block.timestamp - lastDistributionTime >= rewardDistributePeriod, "not reached distribution period yet");
         usdcToken = IERC20(usdcAddress);
         uint256 totalPower;
 
@@ -167,10 +176,14 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
             
             uint256 percentOfToken = (totalReward * miners[minerIndex].hashrate) / totalPower;
             uint256 rewardOfToken = (percentOfToken * token.amount * 2) / (3 * 4);
+            if (token.mintTime > lastDistributionTime) {
+                rewardOfToken = rewardOfToken * (rewardDistributePeriod - (token.mintTime - lastDistributionTime)) / rewardDistributePeriod;
+            }
             usdcToken.transfer(ownerOf(i + 1), rewardOfToken);
 
             tokenIdToToken[i + 1].totalEarning += rewardOfToken;
         }
+        lastDistributionTime += rewardDistributePeriod;
     }
 
     // Function to withdraw all Ether from this contract.
