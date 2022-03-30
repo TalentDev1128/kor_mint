@@ -176,6 +176,8 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
             
             uint256 percentOfToken = (totalReward * miners[minerIndex].hashrate) / totalPower;
             uint256 rewardOfToken = (percentOfToken * token.amount * 2) / (3 * 4);
+            if (token.mintTime > lastDistributionTime + rewardDistributePeriod)
+                continue;
             if (token.mintTime > lastDistributionTime) {
                 rewardOfToken = rewardOfToken * (rewardDistributePeriod - (token.mintTime - lastDistributionTime)) / rewardDistributePeriod;
             }
