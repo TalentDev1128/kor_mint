@@ -9,7 +9,7 @@ import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
     using CountersUpgradeable for CountersUpgradeable.Counter;
-    CountersUpgradeable.Counter internal _tokenIds;
+    CountersUpgradeable.Counter internal tokenIds;
     address public owner;
 
     modifier onlyOwner() {
@@ -19,9 +19,10 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
 
     struct Miner {
         string minerType;
-        uint256 hashrate;
+        uint256 hashRate;
         uint256 numOfMiner;
         uint256 price;
+        uint256 mintedCount;
     }
 
     struct Token {
@@ -31,18 +32,18 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
         uint256 totalEarning;
     }
 
-    uint256 constant public expireLimit = 4 * 365 * 24 * 60 * 60; // 4 years
-    uint256 constant public rewardDistributePeriod = 14 * 24 * 60 * 60; // two weeks
+    uint256 constant public EXPIRE_LIMIT = 4 * 365 * 24 * 60 * 60; // 4 years
+    uint256 constant public REWARD_DISTRIBUTE_PERIOD = 14 * 24 * 60 * 60; // two weeks
     uint256 internal lastDistributionTime;
 
+    address public priceFeedAddress;
     AggregatorV3Interface internal priceFeed;
 
     address public usdcAddress;
     IERC20 internal usdcToken;
-    string public _baseTokenURI;
+    string public baseTokenUri;
     
     mapping(uint256 => Miner) public miners; // miner index to miner
-    mapping(uint256 => uint256) public mintedMinerCount; // miner index to minted amount (1 = 1/4)
     mapping(uint256 => Token) public tokenIdToToken; // nft token Id to Token
 
     uint256 public totalMiner;
@@ -54,7 +55,8 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
 
         // Ethereum mainnet: 0x986b5E1e1755e3C2440e960477f25201B0a8bbD4
         // Rinkeby testnet: 0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf
-        priceFeed = AggregatorV3Interface(0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf);
+        priceFeedAddress = 0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf;
+        priceFeed = AggregatorV3Interface(priceFeedAddress);
         
         // Ethereum mainnet: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
         // Rinkeby testnet: 0xD92E713d051C37EbB2561803a3b5FBAbc4962431
@@ -66,7 +68,7 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
 
     //     // Ethereum mainnet: 0x986b5E1e1755e3C2440e960477f25201B0a8bbD4
     //     // Rinkeby testnet: 0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf
-    //     priceFeed = AggregatorV3Interface(0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf);
+    //     priceFeedAddress = 0xdCA36F27cbC4E38aE16C4E9f99D39b42337F6dcf;
         
     //     // Ethereum mainnet: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
     //     // Rinkeby testnet: 0xD92E713d051C37EbB2561803a3b5FBAbc4962431
@@ -84,108 +86,111 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
         return uint256(price);
     }
 
-    function isExpired (uint256 _tokenId) public view returns(bool) {
-        Token memory token = tokenIdToToken[_tokenId];
-        return (block.timestamp - token.mintTime > expireLimit);
+    function isExpired (uint256 tokenId) public view returns(bool) {
+        Token memory token = tokenIdToToken[tokenId];
+        return (block.timestamp - token.mintTime > EXPIRE_LIMIT);
     }
 
-    function safeTransferFrom(address _from, address _to, uint256 _tokenId, bytes calldata data) public override {
-        require(!isExpired(_tokenId), "Expired item cannot be traded");
-        super.safeTransferFrom(_from, _to, _tokenId, data);
+    function safeTransferFrom(address from, address to, uint256 tokenId, bytes calldata data) public override {
+        require(!isExpired(tokenId), "Expired item cannot be traded");
+        super.safeTransferFrom(from, to, tokenId, data);
     }
 
-    function safeTransferFrom(address _from, address _to, uint256 _tokenId) public override {
-        require(!isExpired(_tokenId), "Expired item cannot be traded");
-        super.safeTransferFrom(_from, _to, _tokenId);
+    function safeTransferFrom(address from, address to, uint256 tokenId) public override {
+        require(!isExpired(tokenId), "Expired item cannot be traded");
+        super.safeTransferFrom(from, to, tokenId);
     }
 
-    function transferFrom(address _from, address _to, uint256 _tokenId) public override {
-        require(!isExpired(_tokenId), "Expired item cannot be traded");
-        super.transferFrom(_from, _to, _tokenId);
+    function transferFrom(address from, address to, uint256 tokenId) public override {
+        require(!isExpired(tokenId), "Expired item cannot be traded");
+        super.transferFrom(from, to, tokenId);
     }
 
-    function setUSDCAddress(address _usdcAddress) external onlyOwner {
-        usdcAddress = _usdcAddress;
+    function setUSDCAddress(address usdcAddress_) external onlyOwner {
+        usdcAddress = usdcAddress_;
     }
 
-    function setLastDistributionTIme() external onlyOwner {
+    function setPriceFeedAddress(address priceFeedAddress_) external onlyOwner {
+        priceFeedAddress = priceFeedAddress_;
+        priceFeed = AggregatorV3Interface(priceFeedAddress);
+    }
+
+    function setLastDistributionTime() external onlyOwner {
         lastDistributionTime = block.timestamp;
     }
 
-    function forceExpire(uint256 _tokenId) external onlyOwner {
-        require(isExpired(_tokenId), "This token is not expired yet");
-        Token memory token = tokenIdToToken[_tokenId];
+    function forceExpire(uint256 tokenId) external onlyOwner {
+        require(isExpired(tokenId), "This token is not expired yet");
+        Token memory token = tokenIdToToken[tokenId];
         uint256 minerIndex = token.index;
-        mintedMinerCount[minerIndex] -= token.amount;
+        miners[minerIndex].mintedCount -= token.amount;
     }
 
     // numOfMiners should be multiplied by 4
-    function addMiner(string memory _minerType, uint256 _hashrate, uint256 _numOfMiner, uint256 _price) external onlyOwner {
-        Miner memory miner = Miner({minerType: _minerType, hashrate: _hashrate, numOfMiner: _numOfMiner * 4, price: _price});
+    function addMiner(string memory minerType_, uint256 hashRate_, uint256 numOfMiner_, uint256 price_) external onlyOwner {
+        Miner memory miner = Miner({minerType: minerType_, hashRate: hashRate_, numOfMiner: numOfMiner_ * 4, price: price_, mintedCount: 0});
         miners[totalMiner] = miner;
         totalMiner++;
     }
 
     // numOfMiners should be multiplied by 4
-    function updateMiner(uint256 index, string memory _minerType, uint256 _hashrate, uint256 _numOfMiner, uint256 _price) external onlyOwner {
+    function updateMiner(uint256 index, string memory minerType, uint256 hashRate, uint256 numOfMiner, uint256 price) external onlyOwner {
         require(index < totalMiner, "index out of bounds");
-        miners[index].minerType = _minerType;
-        miners[index].hashrate = _hashrate;
-        miners[index].numOfMiner = _numOfMiner * 4;
-        miners[index].price = _price;
+        miners[index].minerType = minerType;
+        miners[index].hashRate = hashRate;
+        miners[index].numOfMiner = numOfMiner * 4;
+        miners[index].price = price;
     }
 
     // num 1 is equal to 1 / 4, and 2 is equal to 2 / 4
-    function buyMiner(uint256 index, uint256 _num) external payable nonReentrant {
+    function buyMiner(uint256 index, uint256 num) external payable nonReentrant {
         require(index < totalMiner, "index out of bounds");
+        require(num > 0, "invalid amount");
         Miner memory miner = miners[index];
         uint256 currentPrice = getLatestPrice();
-        require(msg.value >= (miner.price * currentPrice * _num / 4), "Not enough money");
+        require(msg.value >= (miner.price * currentPrice * num / 4), "Not enough money");
 
-        uint256 minted = mintedMinerCount[index];
-        require(minted + _num <= miner.numOfMiner, "Exceed available number of miners");
+        uint256 minted = miners[index].mintedCount;
+        require(minted + num <= miner.numOfMiner, "Exceed available number of miners");
 
-        _tokenIds.increment();
-        _safeMint(msg.sender, _tokenIds.current());
+        tokenIds.increment();
+        _safeMint(msg.sender, tokenIds.current());
 
-        Token memory token;
-        token.index = index;
-        token.amount = _num;
-        token.mintTime = block.timestamp;
+        Token memory token = Token({index: index, amount: num, mintTime: block.timestamp, totalEarning: 0});
 
-        tokenIdToToken[_tokenIds.current()] = token;
-        mintedMinerCount[index] += _num;
+        tokenIdToToken[tokenIds.current()] = token;
+        miners[index].mintedCount += num;
     }
 
     function distributeReward(uint256 totalReward) external onlyOwner {
         require(lastDistributionTime > 0, "reward start time not set");
-        require(block.timestamp - lastDistributionTime >= rewardDistributePeriod, "not reached distribution period yet");
+        require(block.timestamp - lastDistributionTime >= REWARD_DISTRIBUTE_PERIOD, "not reached distribution period yet");
         usdcToken = IERC20(usdcAddress);
         uint256 totalPower;
 
         for (uint256 i = 0; i < totalMiner; i++) {
-            totalPower += miners[i].hashrate * miners[i].numOfMiner / 4;
+            totalPower += miners[i].hashRate * miners[i].numOfMiner / 4;
         }
 
         Token memory token;
         for (uint256 i = 0; i < totalSupply(); i++) {
             if (isExpired(i + 1))
-                break;
+                continue;
             token = tokenIdToToken[i + 1];
             uint256 minerIndex = token.index;
             
-            uint256 percentOfToken = (totalReward * miners[minerIndex].hashrate) / totalPower;
-            uint256 rewardOfToken = (percentOfToken * token.amount * 2) / (3 * 4);
-            if (token.mintTime > lastDistributionTime + rewardDistributePeriod)
+            uint256 rewardOfToken = (totalReward * miners[minerIndex].hashRate * token.amount * 2) / (3 * 4 * totalPower);
+            if (token.mintTime > lastDistributionTime + REWARD_DISTRIBUTE_PERIOD)
                 continue;
             if (token.mintTime > lastDistributionTime) {
-                rewardOfToken = rewardOfToken * (rewardDistributePeriod - (token.mintTime - lastDistributionTime)) / rewardDistributePeriod;
+                rewardOfToken = rewardOfToken * (REWARD_DISTRIBUTE_PERIOD - (token.mintTime - lastDistributionTime)) / REWARD_DISTRIBUTE_PERIOD;
             }
-            usdcToken.transfer(ownerOf(i + 1), rewardOfToken);
+            bool result = usdcToken.transfer(ownerOf(i + 1), rewardOfToken);
+            require(result, "failed to transfer reward");
 
             tokenIdToToken[i + 1].totalEarning += rewardOfToken;
         }
-        lastDistributionTime += rewardDistributePeriod;
+        lastDistributionTime += REWARD_DISTRIBUTE_PERIOD;
     }
 
     // Function to withdraw all Ether from this contract.
@@ -197,10 +202,10 @@ contract KOR is ERC721EnumerableUpgradeable, ReentrancyGuardUpgradeable {
     }
 
     function _baseURI() internal view virtual override returns (string memory) {
-        return _baseTokenURI;
+        return baseTokenUri;
     }
 
-    function setBaseURI(string memory baseURI) external onlyOwner {
-        _baseTokenURI = baseURI;
+    function setBaseUri(string memory baseUri) external onlyOwner {
+        baseTokenUri = baseUri;
     }
 }
